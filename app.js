@@ -17,7 +17,7 @@ app.use((req, res, next) => {
     next();
 });
 
-let authenticate = (req, res, next) => {
+let authenticated = (req, res, next) => {
     let token = req.header('x-access-token');
     jwt.verify(token, User.getJWTSecret(), (err, decoded) => {
         if (err) {
@@ -67,9 +67,9 @@ let verifySession = (req, res, next) => {
     })
 }
 
-app.get('/lists', authenticate ,(req, res) => {
+app.get('/lists', authenticated, (req, res) => {
     List.find({
-        _userId: req.user_id
+        // _userId: req.user_id
     }).then((lists) => {
         res.send(lists);
     }).catch((e) => {
@@ -77,56 +77,115 @@ app.get('/lists', authenticate ,(req, res) => {
     })
 });
 
-app.post('/lists', (req, res) => {
+app.post('/lists', authenticated,  (req, res) => {
     let title = req.body.title;
-    let newList = new List({ title });
+    let _userId = req.user_id;
+
+    let newList = new List({ title, _userId });
     newList.save().then((listDoc) => {
         res.send(listDoc);
     });
 });
 
-app.patch('/lists/:id', (req, res) => {
-    List.findOneAndUpdate({ _id: req.params.id }, { $set: req.body}).then(() => {
+app.patch('/lists/:id', authenticated, (req, res) => {
+    List.findOneAndUpdate({ _id: req.params.id, _userId: req.user_id },
+        { $set: req.body}).then(() => {
         res.sendStatus(200);
     });
 });
 
-app.delete('/lists/:id', (req, res) => {
-    List.findOneAndRemove({ _id: req.params.id })
+app.delete('/lists/:id', authenticated, (req, res) => {
+    List.findOneAndRemove({ _id: req.params.id, _userId: req.user_id })
     .then((removedListDoc) => {
         res.send(removedListDoc);
         deleteTasksFromList(removedListDoc._id);
     });
 });
 
-app.get('/lists/:listId/tasks', (req, res) => {
+app.get('/lists/:listId/tasks', authenticated, (req, res) => {
     Task.find({ _listId: req.params.listId }).then((tasks) => {
         res.send(tasks);
     });
 });
 
-app.post('/lists/:listId/tasks', (req, res) => {
-    let title = req.body.title;
-    let _listId = req.params.listId;
-    let newTask = new Task({
-        title,
-        _listId
-    });
-    newTask.save().then((newTaskDoc) => {
-        res.send(newTaskDoc);
-    });
+app.post('/lists/:listId/tasks', authenticated, (req, res) => {
+
+    List.findOne({
+        _id: req.params.listId,
+        _userId: req.user_id
+    }).then((user) => {
+        if (user) {
+            return true;
+        }
+        else {
+            return false;
+        }
+    }).then((canCreateTasks) => {
+        if (canCreateTasks) {
+            let title = req.body.title;
+            let _listId = req.params.listId;
+            let newTask = new Task({
+                title,
+                _listId
+            });
+            newTask.save().then((newTaskDoc) => {
+            res.send(newTaskDoc);
+        });
+        }
+        else {
+            res.sendStatus(404);
+        }
+    })  
 });
 
-app.patch('/lists/:listId/tasks/:taskId', (req, res) => {
-    Task.findOneAndUpdate({ _id: req.params.taskId, _listId: req.params.listId }, { $set: req.body}).then(() => {
-        res.send({message: 'Updated Successfully.'});
-    });
+app.patch('/lists/:listId/tasks/:taskId', authenticated, (req, res) => {
+
+    List.findOne({
+        _id: req.params.listId,
+        _userId: req.user_id
+    }).then((list) => {
+        if (list) {
+            return true;
+        }
+        else {
+            return false;
+        }
+    }).then((canUpdateTasks) => {
+        if (canUpdateTasks) {
+            Task.findOneAndUpdate({ _id: req.params.taskId, _listId: req.params.listId },
+                { $set: req.body}).then(() => {
+                res.send({message: 'Updated Successfully.'});
+            });
+        }
+        else {
+            res.sendStatus(404);
+        }
+    })  
 });
 
-app.delete('/lists/:listId/tasks/:taskId', (req, res) => {
-    Task.findOneAndRemove({ _id: req.params.taskId, _listId: req.params.listId }).then((removedTaskDoc) => {
-        res.send(removedTaskDoc);
-    });
+app.delete('/lists/:listId/tasks/:taskId', authenticated, (req, res) => {
+
+    List.findOne({
+        _id: req.params.listId,
+        _userId: req.user_id
+    }).then((list) => {
+        if (list) {
+            return true;
+        }
+        else {
+            return false;
+        }
+    }).then((canDeleteTasks) => {
+        if (canDeleteTasks) {
+            Task.findOneAndRemove({ _id: req.params.taskId, _listId: req.params.listId })
+            .then((removedTaskDoc) => {
+                res.send(removedTaskDoc);
+            });
+        }
+        else {
+            res.sendStatus(404);
+        }
+    }) 
 });
 
 app.post('/users', (req, res) => {
